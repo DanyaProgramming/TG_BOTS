@@ -2,6 +2,8 @@ from aiogram import Bot, Dispatcher, types, F, Router
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 import sqlite3
 import os
 
@@ -51,19 +53,25 @@ def has_access(user_id: int) -> bool:
     conn.close()
     return result
 
-# Клавиатура для обычных пользователей
-def user_keyboard():
+# Клавиатура для пользователей (с учетом админ-статуса)
+def user_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    keyboard = [
+        [KeyboardButton(text="Сдача вц"), KeyboardButton(text="Паки девушек")],
+        [KeyboardButton(text="Обучение скама"), KeyboardButton(text="Реквизиты")]
+    ]
+    
+    # Добавляем кнопку админ-панели для администраторов
+    if is_admin(user_id):
+        keyboard.append([KeyboardButton(text="Админ-панель")])
+    
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Сдача вц"), KeyboardButton(text="Паки девушек")],
-            [KeyboardButton(text="Обучение скама"), KeyboardButton(text="Реквизиты")]
-        ],
+        keyboard=keyboard,
         resize_keyboard=True,
         one_time_keyboard=False
     )
 
 # Клавиатура для администратора
-def admin_keyboard():
+def admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Добавить доступ"), KeyboardButton(text="Удалить доступ")],
@@ -73,28 +81,32 @@ def admin_keyboard():
         one_time_keyboard=False
     )
 
+# Состояния FSM
+class AccessStates(StatesGroup):
+    waiting_for_user = State()
+
 # Инициализация БД при запуске
 init_db()
 
 # ================== ОБРАБОТЧИКИ АДМИНИСТРАТОРА ==================
 
 @admin_router.message(F.text == "Добавить доступ")
-async def add_access_handler(message: types.Message):
+async def add_access_handler(message: types.Message, state: FSMContext):
     await message.reply(
-        "Чтобы добавить доступ пользователю:\n"
-        "1. Ответьте на любое сообщение пользователя командой /add_access\n"
-        "2. Или отправьте /add_access <user_id>",
-        reply_markup=admin_keyboard()
+        "Перешлите сообщение пользователя, которому нужно выдать доступ:",
+        reply_markup=ReplyKeyboardRemove()
     )
+    await state.set_state(AccessStates.waiting_for_user)
+    await state.update_data(action="add")
 
 @admin_router.message(F.text == "Удалить доступ")
-async def remove_access_handler(message: types.Message):
+async def remove_access_handler(message: types.Message, state: FSMContext):
     await message.reply(
-        "Чтобы удалить доступ пользователю:\n"
-        "1. Ответьте на сообщение пользователя командой /remove_access\n"
-        "2. Или отправьте /remove_access <user_id>",
-        reply_markup=admin_keyboard()
+        "Перешлите сообщение пользователя, у которого нужно удалить доступ:",
+        reply_markup=ReplyKeyboardRemove()
     )
+    await state.set_state(AccessStates.waiting_for_user)
+    await state.update_data(action="remove")
 
 @admin_router.message(F.text == "Список доступа")
 async def list_access_handler(message: types.Message):
@@ -116,8 +128,40 @@ async def list_access_handler(message: types.Message):
 async def main_menu_handler(message: types.Message):
     await message.reply(
         "Возвращаемся в основное меню",
-        reply_markup=user_keyboard()
+        reply_markup=user_keyboard(message.from_user.id)
     )
+
+# Обработчик пересланных сообщений для выдачи/удаления доступа
+@admin_router.message(AccessStates.waiting_for_user)
+async def process_user_access(message: types.Message, state: FSMContext):
+    # Получаем сохраненное действие (add/remove)
+    data = await state.get_data()
+    action = data.get("action")
+    
+    # Проверяем наличие пересланного сообщения
+    if not message.forward_from:
+        await message.reply("❌ Это не пересланное сообщение! Попробуйте снова.", reply_markup=admin_keyboard())
+        await state.clear()
+        return
+    
+    user_id = message.forward_from.id
+    username = f"@{message.forward_from.username}" if message.forward_from.username else "пользователь"
+    
+    conn = sqlite3.connect('bot_db.sqlite')
+    c = conn.cursor()
+    
+    if action == "add":
+        c.execute("INSERT OR IGNORE INTO allowed_users (user_id) VALUES (?)", (user_id,))
+        response = f"✅ {username} (ID: {user_id}) добавлен в список доступа!"
+    else:
+        c.execute("DELETE FROM allowed_users WHERE user_id = ?", (user_id,))
+        response = f"❌ {username} (ID: {user_id}) удален из списка доступа!"
+    
+    conn.commit()
+    conn.close()
+    
+    await message.reply(response, reply_markup=admin_keyboard())
+    await state.clear()
 
 # Команды для управления доступом
 @dp.message(Command("add_access"))
@@ -183,16 +227,10 @@ async def send_welcome(message: types.Message):
     
     Выберите категорию того, что вам нужно:
     """
-    reply_markup = user_keyboard()
-    
-    # Если пользователь админ - добавляем кнопку админ-панели
-    if is_admin(message.from_user.id):
-        reply_markup.keyboard.append([KeyboardButton(text="Админ-панель")])
-    
     await message.reply(
         text=welcome_text,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=reply_markup
+        reply_markup=user_keyboard(message.from_user.id)
     )
 
 @dp.message(F.text == "Админ-панель")
@@ -216,7 +254,8 @@ async def girls_packs(message: types.Message):
     if not has_access(message.from_user.id):
         await message.reply(
             "⛔️ Доступ ограничен!\nОбратитесь к администратору для получения прав.",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=user_keyboard(message.from_user.id)
         )
         return
     
