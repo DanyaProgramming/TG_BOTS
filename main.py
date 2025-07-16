@@ -31,6 +31,8 @@ def init_db():
     # Добавляем администраторов
     for admin_id in ADMIN_IDS:
         c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (admin_id,))
+    for admin_id in ADMIN_IDS:
+        c.execute("INSERT OR IGNORE INTO allowed_users (user_id) VALUES (?)", (admin_id,))
     
     conn.commit()
     conn.close()
