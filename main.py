@@ -13,7 +13,7 @@ dp = Dispatcher()
 admin_router = Router()
 
 # Конфигурация
-ADMIN_IDS = [6591961224]  # ❗️ЗАМЕНИТЕ НА ВАШ ТЕЛЕГРАМ ID (можно узнать через @userinfobot)❗️
+ADMIN_IDS = [6591961224, 5219987325]  # ❗️ЗАМЕНИТЕ НА ВАШ ТЕЛЕГРАМ ID (можно узнать через @userinfobot)❗️
 
 # Инициализация БД
 def init_db():
