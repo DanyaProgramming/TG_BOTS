@@ -7,7 +7,7 @@ from aiogram.fsm.state import State, StatesGroup
 import sqlite3
 import os
 
-TOKEN = '7772231526:AAEV4JrEcBzmJ4Fuw81lUGV9RUvyJTShx00'
+TOKEN = os.getenv("7772231526:AAEV4JrEcBzmJ4Fuw81lUGV9RUvyJTShx00")
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 admin_router = Router()
