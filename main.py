@@ -227,8 +227,7 @@ async def send_welcome(message: types.Message):
     welcome_text = """
     🌟 *Добро пожаловать в Nevna Tim!* 🌟
     
-    Выберите категорию того, что вам нужно:
-    """
+Выберите категорию того, что вам нужно:"""
     await message.reply(
         text=welcome_text,
         parse_mode=ParseMode.MARKDOWN,
